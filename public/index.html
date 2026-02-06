@@ -14,6 +14,13 @@
       </header>
 
       <section class="card" id="join-card">
+        <div class="quick-join">
+          <div>
+            <h2>Start a room</h2>
+            <p class="hint">We generated a room for you. Share the link and jump in.</p>
+          </div>
+          <button id="start-room" type="button">Start room</button>
+        </div>
         <div class="field">
           <label for="name">Name</label>
           <input id="name" type="text" placeholder="Your name" />
@@ -40,10 +47,14 @@
             <h2 id="room-title">Room</h2>
             <p id="call-status">Waiting for someone to join...</p>
           </div>
-          <div class="pill" id="mic-state">Mic: Off</div>
+          <div class="status-pills">
+            <div class="pill" id="connection-state">Connecting</div>
+            <div class="pill" id="mic-state">Mic: Off</div>
+          </div>
         </div>
         <div class="controls">
           <button id="toggle-mic">Enable mic</button>
+          <button id="toggle-mini">Pop-out view</button>
           <button id="leave">Leave room</button>
         </div>
         <div class="call-grid">
@@ -63,6 +74,17 @@
         <div id="remote-audios" class="remote-audios"></div>
       </section>
     </main>
+    <div id="mini-call" class="mini-call" hidden>
+      <div class="mini-header">
+        <span id="mini-room">Room</span>
+        <button id="close-mini" type="button">×</button>
+      </div>
+      <div class="mini-status" id="mini-status">Connecting...</div>
+      <div class="mini-actions">
+        <button id="mini-mic" type="button">Mic</button>
+        <button id="mini-leave" type="button">Leave</button>
+      </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="/app.js"></script>

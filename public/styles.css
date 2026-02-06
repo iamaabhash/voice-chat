@@ -53,6 +53,24 @@ h1 {
   animation: rise 0.6s ease;
 }
 
+.quick-join {
+  background: linear-gradient(120deg, #fff4ec, #ffe2d1);
+  border-radius: 18px;
+  padding: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.quick-join h2 {
+  margin: 0 0 6px;
+}
+
+.quick-join .hint {
+  margin: 0;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -124,6 +142,10 @@ button#leave:hover {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 14px;
+  border-radius: 999px;
+  background: #fff0e7;
 }
 
 .pill {
@@ -131,6 +153,28 @@ button#leave:hover {
   padding: 8px 14px;
   border-radius: 999px;
   font-weight: 600;
+}
+
+.status-pills {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pill#connection-state {
+  background: #e6f5ff;
+  color: #1f4b75;
+}
+
+.pill.connected {
+  background: #e6f9ed;
+  color: #1f6a3a;
+}
+
+.pill.relay {
+  background: #fff1d6;
+  color: #7a4c00;
 }
 
 .call-grid {
@@ -209,6 +253,56 @@ button#leave:hover {
   display: none;
 }
 
+.mini-call {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 220px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(31, 29, 26, 0.2);
+  display: grid;
+  gap: 10px;
+  backdrop-filter: blur(8px);
+  z-index: 50;
+}
+
+.mini-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+}
+
+.mini-header:active {
+  cursor: grabbing;
+}
+
+.mini-header button {
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+
+.mini-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mini-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mini-actions button {
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -222,6 +316,16 @@ button#leave:hover {
 
 @media (max-width: 560px) {
   .status {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .controls {
+    flex-direction: column;
+    border-radius: 18px;
+  }
+
+  .quick-join {
     flex-direction: column;
     align-items: flex-start;
   }

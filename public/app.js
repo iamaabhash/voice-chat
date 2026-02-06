@@ -3,11 +3,21 @@ const socket = io();
 const joinCard = document.getElementById("join-card");
 const callCard = document.getElementById("call-card");
 const joinButton = document.getElementById("join");
+const startRoomButton = document.getElementById("start-room");
 const createRoomButton = document.getElementById("create-room");
 const copyLinkButton = document.getElementById("copy-link");
 const leaveButton = document.getElementById("leave");
 const toggleMicButton = document.getElementById("toggle-mic");
+const toggleMiniButton = document.getElementById("toggle-mini");
 const micState = document.getElementById("mic-state");
+const connectionState = document.getElementById("connection-state");
+const miniCall = document.getElementById("mini-call");
+const miniRoom = document.getElementById("mini-room");
+const miniStatus = document.getElementById("mini-status");
+const miniMic = document.getElementById("mini-mic");
+const miniLeave = document.getElementById("mini-leave");
+const closeMini = document.getElementById("close-mini");
+const miniHeader = document.querySelector(".mini-header");
 const roomTitle = document.getElementById("room-title");
 const callStatus = document.getElementById("call-status");
 const remoteAudios = document.getElementById("remote-audios");
@@ -41,12 +51,22 @@ const configReady = loadConfig();
 
 function setStatus(message) {
   callStatus.textContent = message;
+  miniStatus.textContent = message;
+}
+
+function setConnectionState(label, variant) {
+  connectionState.textContent = label;
+  connectionState.classList.remove("connected", "relay");
+  if (variant) {
+    connectionState.classList.add(variant);
+  }
 }
 
 function setMicState(enabled) {
   micEnabled = enabled;
   micState.textContent = `Mic: ${enabled ? "On" : "Off"}`;
   toggleMicButton.textContent = enabled ? "Mute mic" : "Enable mic";
+  miniMic.textContent = enabled ? "Mute" : "Mic";
 }
 
 async function ensureLocalStream() {
@@ -104,6 +124,7 @@ function createPeerConnection(peerId) {
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "connected") {
       setStatus("Connected! Say hi.");
+      setConnectionState("Connected", "connected");
     }
   };
 
@@ -157,6 +178,28 @@ async function connectToPeers(members) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     socket.emit("offer", { roomId, to: member.id, sdp: offer });
+  }
+}
+
+async function updateRelayStatus() {
+  if (useLivekit) {
+    setConnectionState("SFU (LiveKit)", "connected");
+    return;
+  }
+  const relayed = [];
+  for (const pc of peerConnections.values()) {
+    const stats = await pc.getStats();
+    stats.forEach((report) => {
+      if (report.type === "candidate-pair" && report.state === "succeeded" && report.selected) {
+        const local = stats.get(report.localCandidateId);
+        if (local && local.candidateType === "relay") {
+          relayed.push(true);
+        }
+      }
+    });
+  }
+  if (relayed.length) {
+    setConnectionState("Using TURN relay", "relay");
   }
 }
 
@@ -239,6 +282,17 @@ joinButton.addEventListener("click", async () => {
   socket.emit("join-room", { roomId, name: displayName, avatar: displayAvatar });
 });
 
+startRoomButton.addEventListener("click", () => {
+  if (!getRoomInput().value.trim()) {
+    getRoomInput().value = generateRoomId();
+  }
+  joinButton.click();
+});
+
+toggleMiniButton.addEventListener("click", () => {
+  miniCall.hidden = !miniCall.hidden;
+});
+
 createRoomButton.addEventListener("click", () => {
   const newRoom = generateRoomId();
   getRoomInput().value = newRoom;
@@ -266,6 +320,10 @@ leaveButton.addEventListener("click", () => {
   window.location.reload();
 });
 
+miniLeave.addEventListener("click", () => {
+  leaveButton.click();
+});
+
 toggleMicButton.addEventListener("click", async () => {
   if (livekitAudioTrack) {
     livekitAudioTrack.enabled = !livekitAudioTrack.enabled;
@@ -281,6 +339,56 @@ toggleMicButton.addEventListener("click", async () => {
   });
 });
 
+miniMic.addEventListener("click", async () => {
+  toggleMicButton.click();
+});
+
+closeMini.addEventListener("click", () => {
+  miniCall.hidden = true;
+});
+
+let dragActive = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+function startDrag(event) {
+  dragActive = true;
+  const rect = miniCall.getBoundingClientRect();
+  const point = event.touches ? event.touches[0] : event;
+  dragOffsetX = point.clientX - rect.left;
+  dragOffsetY = point.clientY - rect.top;
+}
+
+function onDrag(event) {
+  if (!dragActive) return;
+  const point = event.touches ? event.touches[0] : event;
+  const x = Math.min(window.innerWidth - rectWidth(), Math.max(0, point.clientX - dragOffsetX));
+  const y = Math.min(window.innerHeight - rectHeight(), Math.max(0, point.clientY - dragOffsetY));
+  miniCall.style.left = `${x}px`;
+  miniCall.style.top = `${y}px`;
+  miniCall.style.right = "auto";
+  miniCall.style.bottom = "auto";
+}
+
+function stopDrag() {
+  dragActive = false;
+}
+
+function rectWidth() {
+  return miniCall.getBoundingClientRect().width;
+}
+
+function rectHeight() {
+  return miniCall.getBoundingClientRect().height;
+}
+
+miniHeader.addEventListener("mousedown", startDrag);
+window.addEventListener("mousemove", onDrag);
+window.addEventListener("mouseup", stopDrag);
+miniHeader.addEventListener("touchstart", startDrag, { passive: true });
+window.addEventListener("touchmove", onDrag, { passive: true });
+window.addEventListener("touchend", stopDrag);
+
 socket.on("room-full", () => {
   alert("That room is full. Try another room ID.");
 });
@@ -289,12 +397,17 @@ socket.on("room-joined", async ({ roomId: joinedRoomId, members }) => {
   joinCard.hidden = true;
   callCard.hidden = false;
   roomTitle.textContent = `Room: ${joinedRoomId}`;
+  miniRoom.textContent = joinedRoomId;
+  miniCall.hidden = false;
+  setConnectionState("Connecting");
   if (useLivekit) {
     setStatus("Connecting via LiveKit...");
     await startLivekit(joinedRoomId);
+    await updateRelayStatus();
   } else {
     setStatus(members.length ? "Connecting to peers..." : "Waiting for someone to join...");
     await connectToPeers(members);
+    setTimeout(updateRelayStatus, 1500);
   }
 });
 
@@ -356,3 +469,6 @@ chatForm.addEventListener("submit", (event) => {
 
 syncRoomFromUrl();
 syncProfileFromStorage();
+if (!getRoomInput().value.trim()) {
+  getRoomInput().value = generateRoomId();
+}
