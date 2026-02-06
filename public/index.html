@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Chat MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Voice Chat</h1>
+        <p class="subtitle">Fast, simple group voice rooms with WebRTC.</p>
+      </header>
+
+      <section class="card" id="join-card">
+        <div class="field">
+          <label for="name">Name</label>
+          <input id="name" type="text" placeholder="Your name" />
+        </div>
+        <div class="field">
+          <label for="avatar">Avatar (optional)</label>
+          <input id="avatar" type="text" placeholder="Emoji or initials" maxlength="4" />
+        </div>
+        <div class="field">
+          <label for="room">Room ID</label>
+          <input id="room" type="text" placeholder="e.g. ocean-42" />
+        </div>
+        <div class="room-actions">
+          <button id="create-room" type="button">Create room</button>
+          <button id="copy-link" type="button">Copy invite link</button>
+        </div>
+        <button id="join">Join room</button>
+        <p class="hint">Share the room ID or invite link to connect.</p>
+      </section>
+
+      <section class="card" id="call-card" hidden>
+        <div class="status">
+          <div>
+            <h2 id="room-title">Room</h2>
+            <p id="call-status">Waiting for someone to join...</p>
+          </div>
+          <div class="pill" id="mic-state">Mic: Off</div>
+        </div>
+        <div class="controls">
+          <button id="toggle-mic">Enable mic</button>
+          <button id="leave">Leave room</button>
+        </div>
+        <div class="call-grid">
+          <section class="panel">
+            <h3>People</h3>
+            <ul id="people-list" class="people-list"></ul>
+          </section>
+          <section class="panel">
+            <h3>Chat</h3>
+            <div id="chat-messages" class="chat-messages"></div>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-input" type="text" placeholder="Say hello..." autocomplete="off" />
+              <button type="submit">Send</button>
+            </form>
+          </section>
+        </div>
+        <div id="remote-audios" class="remote-audios"></div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
