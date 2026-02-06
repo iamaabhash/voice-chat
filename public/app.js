@@ -6,6 +6,8 @@ const joinButton = document.getElementById("join");
 const startRoomButton = document.getElementById("start-room");
 const createRoomButton = document.getElementById("create-room");
 const copyLinkButton = document.getElementById("copy-link");
+const saveProfileButton = document.getElementById("save-profile");
+const loginStatus = document.getElementById("login-status");
 const leaveButton = document.getElementById("leave");
 const toggleMicButton = document.getElementById("toggle-mic");
 const toggleMiniButton = document.getElementById("toggle-mini");
@@ -88,6 +90,14 @@ function setLockState(locked) {
   lockState.textContent = locked ? "Locked" : "Unlocked";
 }
 
+function setLoginStatus(name) {
+  if (name) {
+    loginStatus.textContent = `Logged in as ${name}`;
+  } else {
+    loginStatus.textContent = "Not logged in";
+  }
+}
+
 async function ensureLocalStream() {
   if (localStream) return localStream;
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -166,12 +176,17 @@ function renderPeople(members) {
     if (member.connected === false) {
       li.classList.add("member-offline");
     }
+    const dot = document.createElement("span");
+    dot.className = "status-dot";
+    if (member.connected) {
+      dot.classList.add("online");
+    }
     const avatar = document.createElement("div");
     avatar.className = "avatar";
     avatar.textContent = member.avatar || member.name.slice(0, 1).toUpperCase();
     const name = document.createElement("span");
     name.textContent = member.name;
-    li.append(avatar, name);
+    li.append(dot, avatar, name);
     if (member.clientId && member.clientId === hostClientId) {
       const badge = document.createElement("span");
       badge.className = "host-badge";
@@ -269,6 +284,7 @@ function syncProfileFromStorage() {
   if (savedAvatar) {
     getAvatarInput().value = savedAvatar;
   }
+  setLoginStatus(savedName);
 }
 
 function getClientId() {
@@ -324,6 +340,10 @@ joinButton.addEventListener("click", async () => {
     alert("Please enter a room ID.");
     return;
   }
+  if (!displayName || displayName === "Guest") {
+    alert("Please login with your name before joining.");
+    return;
+  }
 
   localStorage.setItem(STORAGE_KEYS.name, displayName);
   localStorage.setItem(STORAGE_KEYS.avatar, displayAvatar);
@@ -335,6 +355,19 @@ joinButton.addEventListener("click", async () => {
     avatar: displayAvatar,
     clientId: getClientId(),
   });
+});
+
+saveProfileButton.addEventListener("click", () => {
+  const nameInput = getNameInput();
+  const avatarInput = getAvatarInput();
+  const name = nameInput.value.trim();
+  if (!name) {
+    alert("Please enter a name to login.");
+    return;
+  }
+  localStorage.setItem(STORAGE_KEYS.name, name);
+  localStorage.setItem(STORAGE_KEYS.avatar, avatarInput.value.trim());
+  setLoginStatus(name);
 });
 
 startRoomButton.addEventListener("click", () => {

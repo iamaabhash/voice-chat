@@ -126,6 +126,26 @@ button#leave:hover {
   background: #e68d5e;
 }
 
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-actions button {
+  background: #2f6fed;
+}
+
+.profile-actions button:hover {
+  background: #1d52bf;
+}
+
+.login-status {
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .hint {
   color: var(--muted);
   margin: 0;
@@ -210,6 +230,18 @@ button#leave:hover {
   align-items: center;
   gap: 10px;
   font-weight: 600;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #c9c9c9;
+  box-shadow: 0 0 0 2px #fff7f2;
+}
+
+.status-dot.online {
+  background: #2ecc71;
 }
 
 .people-list li.member-offline {
