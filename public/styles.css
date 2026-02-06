@@ -167,6 +167,11 @@ button#leave:hover {
   color: #1f4b75;
 }
 
+.pill#lock-state {
+  background: #f0e8ff;
+  color: #4b2a7a;
+}
+
 .pill.connected {
   background: #e6f9ed;
   color: #1f6a3a;
@@ -205,6 +210,32 @@ button#leave:hover {
   align-items: center;
   gap: 10px;
   font-weight: 600;
+}
+
+.people-list li.member-offline {
+  opacity: 0.6;
+}
+
+.people-list li .host-badge {
+  margin-left: auto;
+  background: #ffe7b3;
+  color: #6b4600;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.reconnect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff3cd;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: #7a4c00;
 }
 
 .avatar {

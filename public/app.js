@@ -9,8 +9,12 @@ const copyLinkButton = document.getElementById("copy-link");
 const leaveButton = document.getElementById("leave");
 const toggleMicButton = document.getElementById("toggle-mic");
 const toggleMiniButton = document.getElementById("toggle-mini");
+const toggleLockButton = document.getElementById("toggle-lock");
 const micState = document.getElementById("mic-state");
 const connectionState = document.getElementById("connection-state");
+const lockState = document.getElementById("lock-state");
+const reconnectBanner = document.getElementById("reconnect-banner");
+const reconnectNow = document.getElementById("reconnect-now");
 const miniCall = document.getElementById("mini-call");
 const miniRoom = document.getElementById("mini-room");
 const miniStatus = document.getElementById("mini-status");
@@ -36,6 +40,9 @@ let displayAvatar = "";
 const STORAGE_KEYS = {
   name: "voicechat.name",
   avatar: "voicechat.avatar",
+  clientId: "voicechat.clientId",
+  lastRoom: "voicechat.lastRoom",
+  leftIntentionally: "voicechat.leftIntentionally",
 };
 
 const defaultIceServers = [
@@ -48,6 +55,11 @@ let useLivekit = false;
 let livekitRoom = null;
 let livekitAudioTrack = null;
 const configReady = loadConfig();
+let isHost = false;
+let roomLocked = false;
+let heartbeatTimer = null;
+let hasJoined = false;
+let hostClientId = null;
 
 function setStatus(message) {
   callStatus.textContent = message;
@@ -67,6 +79,13 @@ function setMicState(enabled) {
   micState.textContent = `Mic: ${enabled ? "On" : "Off"}`;
   toggleMicButton.textContent = enabled ? "Mute mic" : "Enable mic";
   miniMic.textContent = enabled ? "Mute" : "Mic";
+}
+
+function setLockState(locked) {
+  roomLocked = locked;
+  toggleLockButton.textContent = locked ? "Unlock room" : "Lock room";
+  toggleLockButton.disabled = !isHost;
+  lockState.textContent = locked ? "Locked" : "Unlocked";
 }
 
 async function ensureLocalStream() {
@@ -144,12 +163,21 @@ function renderPeople(members) {
   peopleList.innerHTML = "";
   members.forEach((member) => {
     const li = document.createElement("li");
+    if (member.connected === false) {
+      li.classList.add("member-offline");
+    }
     const avatar = document.createElement("div");
     avatar.className = "avatar";
     avatar.textContent = member.avatar || member.name.slice(0, 1).toUpperCase();
     const name = document.createElement("span");
     name.textContent = member.name;
     li.append(avatar, name);
+    if (member.clientId && member.clientId === hostClientId) {
+      const badge = document.createElement("span");
+      badge.className = "host-badge";
+      badge.textContent = "Host";
+      li.appendChild(badge);
+    }
     peopleList.appendChild(li);
   });
 }
@@ -243,6 +271,26 @@ function syncProfileFromStorage() {
   }
 }
 
+function getClientId() {
+  let clientId = localStorage.getItem(STORAGE_KEYS.clientId);
+  if (!clientId) {
+    clientId = crypto.randomUUID();
+    localStorage.setItem(STORAGE_KEYS.clientId, clientId);
+  }
+  return clientId;
+}
+
+function markLeftIntentionally(value) {
+  localStorage.setItem(STORAGE_KEYS.leftIntentionally, value ? "true" : "false");
+}
+
+function startHeartbeat() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(() => {
+    socket.emit("heartbeat", { roomId, clientId: getClientId() });
+  }, 10000);
+}
+
 async function startLivekit(roomIdToJoin) {
   if (!useLivekit) return;
   if (livekitRoom) return;
@@ -279,7 +327,14 @@ joinButton.addEventListener("click", async () => {
 
   localStorage.setItem(STORAGE_KEYS.name, displayName);
   localStorage.setItem(STORAGE_KEYS.avatar, displayAvatar);
-  socket.emit("join-room", { roomId, name: displayName, avatar: displayAvatar });
+  localStorage.setItem(STORAGE_KEYS.lastRoom, roomId);
+  markLeftIntentionally(false);
+  socket.emit("join-room", {
+    roomId,
+    name: displayName,
+    avatar: displayAvatar,
+    clientId: getClientId(),
+  });
 });
 
 startRoomButton.addEventListener("click", () => {
@@ -291,6 +346,11 @@ startRoomButton.addEventListener("click", () => {
 
 toggleMiniButton.addEventListener("click", () => {
   miniCall.hidden = !miniCall.hidden;
+});
+
+toggleLockButton.addEventListener("click", () => {
+  if (!isHost) return;
+  socket.emit("toggle-lock", { roomId, clientId: getClientId(), locked: !roomLocked });
 });
 
 createRoomButton.addEventListener("click", () => {
@@ -314,6 +374,8 @@ copyLinkButton.addEventListener("click", async () => {
 });
 
 leaveButton.addEventListener("click", () => {
+  if (!confirm("Leave the room?")) return;
+  markLeftIntentionally(true);
   if (livekitRoom) {
     livekitRoom.disconnect();
   }
@@ -393,13 +455,16 @@ socket.on("room-full", () => {
   alert("That room is full. Try another room ID.");
 });
 
-socket.on("room-joined", async ({ roomId: joinedRoomId, members }) => {
+socket.on("room-joined", async ({ roomId: joinedRoomId, members, isHost: hostFlag, locked }) => {
   joinCard.hidden = true;
   callCard.hidden = false;
   roomTitle.textContent = `Room: ${joinedRoomId}`;
   miniRoom.textContent = joinedRoomId;
   miniCall.hidden = false;
+  isHost = Boolean(hostFlag);
+  setLockState(Boolean(locked));
   setConnectionState("Connecting");
+  hasJoined = true;
   if (useLivekit) {
     setStatus("Connecting via LiveKit...");
     await startLivekit(joinedRoomId);
@@ -408,6 +473,42 @@ socket.on("room-joined", async ({ roomId: joinedRoomId, members }) => {
     setStatus(members.length ? "Connecting to peers..." : "Waiting for someone to join...");
     await connectToPeers(members);
     setTimeout(updateRelayStatus, 1500);
+  }
+  startHeartbeat();
+});
+
+socket.on("connect", () => {
+  reconnectBanner.hidden = true;
+  if (roomId && !callCard.hidden && !useLivekit) {
+    socket.emit("join-room", {
+      roomId,
+      name: displayName,
+      avatar: displayAvatar,
+      clientId: getClientId(),
+    });
+  }
+});
+
+socket.on("disconnect", () => {
+  if (!callCard.hidden) {
+    setConnectionState("Reconnecting");
+    setStatus("Reconnecting...");
+    hasJoined = false;
+    reconnectBanner.hidden = false;
+  }
+});
+
+reconnectNow.addEventListener("click", () => {
+  reconnectBanner.hidden = true;
+  if (socket.connected) {
+    socket.emit("join-room", {
+      roomId,
+      name: displayName,
+      avatar: displayAvatar,
+      clientId: getClientId(),
+    });
+  } else {
+    socket.connect();
   }
 });
 
@@ -451,8 +552,15 @@ socket.on("peer-left", ({ id }) => {
   }
 });
 
-socket.on("presence-update", ({ members }) => {
+socket.on("room-locked", () => {
+  alert("This room is locked. Ask the host to unlock it.");
+});
+
+socket.on("presence-update", ({ members, locked, hostClientId: hostId }) => {
+  hostClientId = hostId || null;
   renderPeople(members);
+  isHost = hostClientId === getClientId();
+  setLockState(Boolean(locked));
 });
 
 socket.on("chat-message", (payload) => {
@@ -472,3 +580,22 @@ syncProfileFromStorage();
 if (!getRoomInput().value.trim()) {
   getRoomInput().value = generateRoomId();
 }
+
+const lastRoom = localStorage.getItem(STORAGE_KEYS.lastRoom);
+const leftIntentionally = localStorage.getItem(STORAGE_KEYS.leftIntentionally) === "true";
+if (lastRoom && !leftIntentionally) {
+  getRoomInput().value = lastRoom;
+  setTimeout(() => {
+    joinButton.click();
+  }, 500);
+}
+
+setLockState(false);
+
+window.addEventListener("beforeunload", (event) => {
+  const left = localStorage.getItem(STORAGE_KEYS.leftIntentionally) === "true";
+  if (!callCard.hidden && !left) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});

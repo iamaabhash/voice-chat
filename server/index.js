@@ -14,6 +14,7 @@ app.use(express.static("public"));
 
 const rooms = new Map();
 const MAX_PEERS = Number(process.env.MAX_PEERS || 11);
+const REJOIN_GRACE_MS = Number(process.env.REJOIN_GRACE_MS || 45000);
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL || "";
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || "";
@@ -80,7 +81,12 @@ app.get("/livekit/token", (req, res) => {
 
 function getRoom(roomId) {
   if (!rooms.has(roomId)) {
-    rooms.set(roomId, new Map());
+    rooms.set(roomId, {
+      members: new Map(),
+      hostClientId: null,
+      locked: false,
+      cleanupTimers: new Map(),
+    });
   }
   return rooms.get(roomId);
 }
@@ -88,37 +94,89 @@ function getRoom(roomId) {
 function emitPresence(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
-  const members = Array.from(room.entries()).map(([id, data]) => ({
-    id,
+  const members = Array.from(room.members.values()).map((data) => ({
+    id: data.socketId,
     name: data.name,
     avatar: data.avatar || "",
+    clientId: data.clientId,
+    connected: data.connected,
   }));
-  io.to(roomId).emit("presence-update", { members });
+  io.to(roomId).emit("presence-update", { members, locked: room.locked, hostClientId: room.hostClientId });
+}
+
+function assignHostIfNeeded(room) {
+  if (room.hostClientId && room.members.has(room.hostClientId)) return;
+  const first = room.members.values().next().value;
+  room.hostClientId = first ? first.clientId : null;
 }
 
 io.on("connection", (socket) => {
-  socket.on("join-room", ({ roomId, name, avatar }) => {
+  socket.on("join-room", ({ roomId, name, avatar, clientId }) => {
     if (!roomId) return;
+    const safeClientId = String(clientId || "").trim();
+    if (!safeClientId) return;
 
-    const members = getRoom(roomId);
-    if (members.size >= MAX_PEERS) {
+    const room = getRoom(roomId);
+    const members = room.members;
+
+    if (room.locked && !members.has(safeClientId)) {
+      socket.emit("room-locked");
+      return;
+    }
+
+    if (!members.has(safeClientId) && members.size >= MAX_PEERS) {
       socket.emit("room-full");
       return;
     }
 
-    const existingMembers = Array.from(members.entries()).map(([id, data]) => ({
-      id,
-      name: data.name,
-      avatar: data.avatar || "",
-    }));
+    const existingMembers = Array.from(members.values())
+      .filter((data) => data.connected)
+      .map((data) => ({
+        id: data.socketId,
+        name: data.name,
+        avatar: data.avatar || "",
+        clientId: data.clientId,
+      }));
 
     socket.data.roomId = roomId;
     socket.data.name = name || "Guest";
     socket.data.avatar = avatar || "";
-    members.set(socket.id, { name: socket.data.name, avatar: socket.data.avatar });
+    socket.data.clientId = safeClientId;
+    const existing = members.get(safeClientId);
+
+    if (existing) {
+      existing.socketId = socket.id;
+      existing.name = socket.data.name;
+      existing.avatar = socket.data.avatar;
+      existing.connected = true;
+      existing.lastSeen = Date.now();
+      const timer = room.cleanupTimers.get(safeClientId);
+      if (timer) {
+        clearTimeout(timer);
+        room.cleanupTimers.delete(safeClientId);
+      }
+    } else {
+      members.set(safeClientId, {
+        clientId: safeClientId,
+        socketId: socket.id,
+        name: socket.data.name,
+        avatar: socket.data.avatar,
+        connected: true,
+        lastSeen: Date.now(),
+      });
+    }
     socket.join(roomId);
 
-    socket.emit("room-joined", { roomId, members: existingMembers });
+    if (!room.hostClientId) {
+      room.hostClientId = safeClientId;
+    }
+
+    socket.emit("room-joined", {
+      roomId,
+      members: existingMembers,
+      isHost: room.hostClientId === safeClientId,
+      locked: room.locked,
+    });
     emitPresence(roomId);
   });
 
@@ -151,20 +209,59 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("chat-message", payload);
   });
 
+  socket.on("heartbeat", ({ roomId, clientId }) => {
+    if (!roomId || !clientId) return;
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const member = room.members.get(clientId);
+    if (!member) return;
+    member.lastSeen = Date.now();
+  });
+
+  socket.on("toggle-lock", ({ roomId, clientId, locked }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    if (room.hostClientId !== clientId) return;
+    room.locked = Boolean(locked);
+    emitPresence(roomId);
+  });
+
   socket.on("disconnect", () => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
 
-    const members = rooms.get(roomId);
-    if (members) {
-      members.delete(socket.id);
-      if (members.size === 0) {
-        rooms.delete(roomId);
-      } else {
-        socket.to(roomId).emit("peer-left", { id: socket.id });
-        emitPresence(roomId);
-      }
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const clientId = socket.data.clientId;
+    if (!clientId) return;
+
+    const member = room.members.get(clientId);
+    if (member) {
+      member.connected = false;
+      member.lastSeen = Date.now();
     }
+
+    socket.to(roomId).emit("peer-left", { id: socket.id });
+    emitPresence(roomId);
+
+    if (room.cleanupTimers.has(clientId)) {
+      clearTimeout(room.cleanupTimers.get(clientId));
+    }
+    const timer = setTimeout(() => {
+      const currentRoom = rooms.get(roomId);
+      if (!currentRoom) return;
+      const currentMember = currentRoom.members.get(clientId);
+      if (!currentMember) return;
+      if (currentMember.connected) return;
+      currentRoom.members.delete(clientId);
+      currentRoom.cleanupTimers.delete(clientId);
+      assignHostIfNeeded(currentRoom);
+      emitPresence(roomId);
+      if (currentRoom.members.size === 0) {
+        rooms.delete(roomId);
+      }
+    }, REJOIN_GRACE_MS);
+    room.cleanupTimers.set(clientId, timer);
   });
 });
 

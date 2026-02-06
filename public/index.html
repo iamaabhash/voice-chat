@@ -50,12 +50,18 @@
           <div class="status-pills">
             <div class="pill" id="connection-state">Connecting</div>
             <div class="pill" id="mic-state">Mic: Off</div>
+            <div class="pill" id="lock-state">Unlocked</div>
           </div>
         </div>
         <div class="controls">
           <button id="toggle-mic">Enable mic</button>
           <button id="toggle-mini">Pop-out view</button>
+          <button id="toggle-lock" type="button">Lock room</button>
           <button id="leave">Leave room</button>
+        </div>
+        <div class="reconnect" id="reconnect-banner" hidden>
+          <span>Connection lost. Try reconnecting.</span>
+          <button id="reconnect-now" type="button">Reconnect</button>
         </div>
         <div class="call-grid">
           <section class="panel">
